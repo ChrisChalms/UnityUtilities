@@ -18,7 +18,6 @@ public class yBotCameraController : MonoBehaviour
     private Vector3 _destination;
     private Vector3 _adjustedDestination;
     private Vector3 _cameraVelocity;
-    private yBotController _characterController;
     private float _vOrbit, _hOrbit, _zoomInput, _hOrbitSnapInput;
 
     #endregion
@@ -37,7 +36,6 @@ public class yBotCameraController : MonoBehaviour
     {
         // Components
         _target = GameObject.Find("yBot/Follow").transform as Transform;
-        _characterController = _target.GetComponent<yBotController>() as yBotController;
 
         // Initialize
         moveToTarget();
@@ -247,7 +245,7 @@ public class CameraCollisionHandler
         intoArray[1] = (atRotation * new Vector3(x, y, z)) + camPosition; // Top right
         intoArray[2] = (atRotation * new Vector3(-x, -y, z)) + camPosition; // Bottom left
         intoArray[3] = (atRotation * new Vector3(x, -y, z)) + camPosition; // Bottom right
-        intoArray[4] = camPosition - (_camera.transform.forward * 0.5f);
+        intoArray[4] = camPosition - (_camera.transform.forward * 0.5f); // Size of back ray
     }
 
     // Checks to see if there's a collision at any of the calculated clip points
