@@ -7,7 +7,7 @@ public class yBotCameraController : MonoBehaviour
     // Serializable
     [SerializeField] private Transform _target;
     [SerializeField] private PositionSettings _position = new PositionSettings();
-    [SerializeField] private OrbitSettings _orbit = new OrbitSettings();
+    [SerializeField] private SnapOrbitSettings _snapOrbit = new SnapOrbitSettings();
     [SerializeField] private InputSettings _input = new InputSettings();
     [SerializeField] private DebugSettings _debug = new DebugSettings();
     [SerializeField] private CameraCollisionHandler _collisionHandler = new CameraCollisionHandler();
@@ -27,7 +27,7 @@ public class yBotCameraController : MonoBehaviour
 
     public enum CameraModes
     {
-        ORBIT
+        SNAP_ORBIT
     }
 
     #endregion
@@ -36,7 +36,7 @@ public class yBotCameraController : MonoBehaviour
     private void Start()
     {
         // Components
-        _target = GameObject.Find("yBot").transform as Transform;
+        _target = GameObject.Find("yBot/Follow").transform as Transform;
         _characterController = _target.GetComponent<yBotController>() as yBotController;
 
         // Initialize
@@ -57,8 +57,10 @@ public class yBotCameraController : MonoBehaviour
     private void FixedUpdate()
     {
         moveToTarget();
+        if (_camMode == CameraModes.SNAP_ORBIT)
+            snapOrbit();
+        //orbitTarget();
         lookAtTarget();
-        orbitTarget();
 
         _collisionHandler.UpdateCameraClipPoints(transform.position, transform.rotation, ref _collisionHandler.AdjustedCameraClipPoints);
         _collisionHandler.UpdateCameraClipPoints(_destination, transform.rotation, ref _collisionHandler.DesiredCameraClipPoints);
@@ -79,37 +81,35 @@ public class yBotCameraController : MonoBehaviour
     private void moveToTarget()
     {
         _targetPos = _target.position + _position.TargetPosOffset;
-        _destination = Quaternion.Euler(_orbit.XRotation, _orbit.YRotation, 0f) * -Vector3.forward * _position.DistanceFromTarget;
+        _destination = Quaternion.Euler(0f, _snapOrbit.YAngle, 0f) * Vector3.forward * _position.DistanceFromTarget;
         _destination += _targetPos;
-        transform.position = _destination;
 
         if (_collisionHandler.Colliding)
         {
-            _adjustedDestination = Quaternion.Euler(_orbit.XRotation, _orbit.YRotation, 0f) * Vector3.forward * _position.AdjustmentDistance;
+            _adjustedDestination = Quaternion.Euler(0f, _snapOrbit.YAngle, 0f) * -Vector3.forward * _position.AdjustmentDistance;
             _adjustedDestination += _targetPos;
 
             if (_position.SmoothFollow)
-                transform.position = Vector3.SmoothDamp(transform.position, _adjustedDestination, ref _cameraVelocity, _position.Smooth);
+                transform.position = Vector3.SmoothDamp(transform.position, _adjustedDestination, ref _cameraVelocity, _position.CollisionSmooth);
             else
                 transform.position = _adjustedDestination;
         }
         else
         {
             if (_position.SmoothFollow)
-                transform.position = Vector3.SmoothDamp(transform.position, _destination, ref _cameraVelocity, _position.Smooth);
+                transform.position = Vector3.SmoothDamp(transform.position, _destination, ref _cameraVelocity, _position.FollowSmooth);
             else
                 transform.position = _destination;
         }
-
     }
 
     // Smooth rotate to look a target
     private void lookAtTarget()
     {
-        var targetRotation = Quaternion.LookRotation(_targetPos - transform.position);
+        var targetRotation = Quaternion.LookRotation(_targetPos - transform.position - _position.TargetPosOffset);
         transform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, _position.LookSmooth * Time.deltaTime);
     }
-
+    
     // Get the inputs
     private void getInput()
     {
@@ -119,20 +119,22 @@ public class yBotCameraController : MonoBehaviour
         _zoomInput = Input.GetAxisRaw(_input.ZOOM);
     }
 
-    // Orbit target based on input values
-    private void orbitTarget()
+    private void snapOrbit()
     {
-        // Reset if not pressed 
-        if(_hOrbitSnapInput > 0)
-            _orbit.YRotation = -180f;
+        if (_hOrbitSnapInput == 0f) // Not pressed
+        {
+            _snapOrbit.ProcessedInput = false;
+            return;
+        }
 
-        _orbit.XRotation += -_vOrbit * _orbit.VOrbitSmooth * Time.deltaTime;
-        _orbit.YRotation += -_hOrbit * _orbit.HOrbitSmooth * Time.deltaTime;
+        if (!_snapOrbit.ProcessedInput)
+        {
+            _snapOrbit.YAngle += _snapOrbit.SnapIncrement * ((_hOrbitSnapInput < 0) ? -1f : 1f);
+            _snapOrbit.ProcessedInput = true;
+        }
 
-        if (_orbit.XRotation > _orbit.MaxXRotation)
-            _orbit.XRotation = _orbit.MaxXRotation;
-        if (_orbit.XRotation < _orbit.MinXRotation)
-            _orbit.XRotation = _orbit.MinXRotation;
+        if (_snapOrbit.YAngle == 360f || _snapOrbit.YAngle == -360f)
+            _snapOrbit.YAngle = 0f;
     }
 
     // Zoom based on inputs
@@ -152,14 +154,15 @@ public class yBotCameraController : MonoBehaviour
 [System.Serializable]
 public class PositionSettings
 {
-    public Vector3 TargetPosOffset = new Vector3(0f, 1.2f, 0f);
+    public Vector3 TargetPosOffset = new Vector3(0f, 0.5f, 0f);
     public float LookSmooth = 100f;
     public float DistanceFromTarget = -2.5f;
     public float ZoomSmooth = 40f;
     public float MaxZoom = -1f;
     public float MinZoom = -12f;
     public bool SmoothFollow = true;
-    public float Smooth = 0.002f;
+    public float FollowSmooth = 0.05f;
+    public float CollisionSmooth = 0.05f;
 
     [HideInInspector]
     public float NewDistance = -2.5f;
@@ -168,14 +171,11 @@ public class PositionSettings
 }
 
 [System.Serializable]
-public class OrbitSettings
+public class SnapOrbitSettings
 {
-    public float XRotation = -20f;
-    public float YRotation = -180f;
-    public float MaxXRotation = 25;
-    public float MinXRotation = -85f;
-    public float VOrbitSmooth = 150;
-    public float HOrbitSmooth = 150;
+    public float YAngle = 0f;
+    public bool ProcessedInput = false;
+    public float SnapIncrement = 90f;
 }
 
 [System.Serializable]
@@ -247,7 +247,7 @@ public class CameraCollisionHandler
         intoArray[1] = (atRotation * new Vector3(x, y, z)) + camPosition; // Top right
         intoArray[2] = (atRotation * new Vector3(-x, -y, z)) + camPosition; // Bottom left
         intoArray[3] = (atRotation * new Vector3(x, -y, z)) + camPosition; // Bottom right
-        intoArray[4] = camPosition - _camera.transform.forward;
+        intoArray[4] = camPosition - (_camera.transform.forward * 0.5f);
     }
 
     // Checks to see if there's a collision at any of the calculated clip points
